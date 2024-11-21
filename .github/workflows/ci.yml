@@ -1,0 +1,39 @@
+name: CI
+on:
+  push:
+    branches:
+      - master
+
+env:
+  DOTNET_VERSION: '8.0.x' # set this to the dotnet version to use
+  PACKAGE_PATH: 'InsellerateApi'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      CONFIGURATION: Release
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore NuGet Packages
+        run: dotnet restore ${{ env.PACKAGE_PATH }}
+
+      - name: Build Solution
+        run: dotnet build -c $env:CONFIGURATION ${{ env.PACKAGE_PATH }}
+
+      - name: Package Solution
+        run: dotnet pack -c $env:CONFIGURATION ${{ env.PACKAGE_PATH }}
+
+      - name: Publish to GitHub
+        run: |
+          dotnet nuget add source --username kyle079 --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --name github "https://nuget.pkg.github.com/Royal-United-Mortgage/index.json"
+          dotnet nuget push "${{ env.PACKAGE_PATH }}\bin\${{ env.CONFIGURATION }}\*.nupkg" --source github
