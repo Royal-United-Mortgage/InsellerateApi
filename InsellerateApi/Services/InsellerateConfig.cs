@@ -6,7 +6,13 @@ public class InsellerateConfig
     public string Username { get; set; }
     public string Password { get; set; }
     public string OrgId { get; set; }
-    public string LmbUrl { get; set; }
-    public string LmbUsername { get; set; }
-    public string LmbPassword { get; set; }
+    public List<LeadProviderInformation> LeadProviders { get; set; }
+}
+
+public class LeadProviderInformation
+{
+    public string Name { get; set; }
+    public string Url { get; set; }
+    public string Username { get; set; }
+    public string Password { get; set; }
 }

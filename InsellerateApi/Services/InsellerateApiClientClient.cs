@@ -60,28 +60,22 @@ public class InsellerateApiClientClient : IInsellerateApiClient
         return await response.Content.ReadFromJsonAsync<IQLSearchResponse>() ?? throw new InvalidOperationException();
     }
     
-    public async Task PostLeadAsync(LeadPostRequest request, string leadProvider, string campaignNumber = "")
+    public async Task PostLeadAsync(LeadPostRequest request, string leadProvider = "", string campaignNumber = "")
     {
-        HttpClient client;
-        string requestUrl;
-        switch (leadProvider)
+        if (string.IsNullOrEmpty(leadProvider) && string.IsNullOrEmpty(campaignNumber))
         {
-            case "LMB":
-                _logger.LogInformation("Posting lead to LMB");
-                var credentials = $"{_config.LmbUsername}:{_config.LmbPassword}";
-                var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
-                client = _clientFactory.CreateClient("LmbClient");
-                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", encodedCredentials);
-                client.BaseAddress = new Uri(_config.BaseUrl);
-                requestUrl = _config.LmbUrl;
-                _logger.LogInformation("Client Generated");
-                break;
-            default:
-                client = _httpClient;
-                requestUrl = $"integration/CampaignPost/{campaignNumber}";
-                break;
+            throw new InvalidOperationException("Lead Provider or Campaign Number must be provided");
         }
-        var response = await client.PostAsJsonAsync(requestUrl, request);
+        _logger.LogInformation("Posting lead to {LeadProvider}", leadProvider);
+        HttpResponseMessage response;
+        if (string.IsNullOrEmpty(leadProvider))
+        {
+            response = await SendGenericLead(request, campaignNumber);
+        }
+        else
+        {
+            response = await SendProviderRequest(request, leadProvider);
+        }
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<LeadPostResult>();
         if (result is null || result.StatusCode != 1)
@@ -90,5 +84,25 @@ public class InsellerateApiClientClient : IInsellerateApiClient
             throw new InvalidOperationException("Failed to post lead to Insellerate");
         }
         _logger.LogInformation("Lead posted successfully");
+    }
+    
+    private async Task<HttpResponseMessage> SendProviderRequest (LeadPostRequest request, string provider)
+    {
+        var providerConfig = _config.LeadProviders.FirstOrDefault(x => x.Name == provider) ?? throw new InvalidOperationException("Lead Provider not found");
+        var credentials = $"{providerConfig.Username}:{providerConfig.Password}";
+        var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
+        var client = _clientFactory.CreateClient(providerConfig.Name);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", encodedCredentials);
+        client.BaseAddress = new Uri(_config.BaseUrl);
+        var requestUrl = providerConfig.Url;
+        _logger.LogInformation("Client Generated for {Provider} at {Url}", provider, requestUrl);
+        return await client.PostAsJsonAsync(requestUrl, request);
+    }
+    
+    private async Task<HttpResponseMessage> SendGenericLead(LeadPostRequest request, string campaignNumber)
+    {
+        var requestUrl = $"integration/CampaignPost/{campaignNumber}";
+        _logger.LogInformation("Posting lead to {Url}", requestUrl);
+        return await _httpClient.PostAsJsonAsync(requestUrl, request);
     }
 }

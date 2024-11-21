@@ -49,9 +49,9 @@ Create an `appsettings.json` file in the root of your project with the following
     "Username": "your-username",
     "Password": "your-password",
     "OrgId": "your-org-id",
-    "LmbUrl": "https://lmb.insellerate.com",
-    "LmbUsername": "your-lmb-username",
-    "LmbPassword": "your-lmb-password"
+    "LmbUrl": "Optional Lead Provider URL",
+    "LmbUsername": "Optional Lead Provider Username",
+    "LmbPassword": "Optional Lead Provider Password"
   }
 }
 ```
