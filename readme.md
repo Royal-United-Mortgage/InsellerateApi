@@ -48,10 +48,15 @@ Create an `appsettings.json` file in the root of your project with the following
     "BaseUrl": "https://api.insellerate.com",
     "Username": "your-username",
     "Password": "your-password",
-    "OrgId": "your-org-id",
-    "LmbUrl": "Optional Lead Provider URL",
-    "LmbUsername": "Optional Lead Provider Username",
-    "LmbPassword": "Optional Lead Provider Password"
+    "OrgId": "your-org-id", 
+     "LeadProviderInformation": [
+        {
+           "Name": "LeadProviderName",
+           "Url": "Lead Provider Specific URL",
+           "Username": "Lead Provider Username",
+           "Password": "Lead Provider Password",
+        }
+     ]
   }
 }
 ```
