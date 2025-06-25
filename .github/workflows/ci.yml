@@ -9,6 +9,7 @@ env:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build-and-publish:
@@ -99,11 +100,17 @@ jobs:
           # Pack the project
           dotnet pack -c Release --no-build ${{ env.PACKAGE_PATH }}
           
-          # Publish to GitHub Packages
+          # Publish to GitHub Packages with proper authentication
+          dotnet nuget add source \
+            --username ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --store-password-in-clear-text \
+            --name github \
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          
           dotnet nuget push \
             "${{ env.PACKAGE_PATH }}/bin/Release/*.nupkg" \
-            --source "https://nuget.pkg.github.com/Royal-United-Mortgage/index.json" \
-            --api-key ${{ secrets.GITHUB_TOKEN }} \
+            --source github \
             --skip-duplicate
 
       - name: Skip message
