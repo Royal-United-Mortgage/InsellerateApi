@@ -28,7 +28,8 @@ jobs:
         uses: actions/setup-dotnet@v4  # Updated to v4
         with: 
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true  # Enable NuGet caching
+          cache: true
+          cache-dependency-path: '${{ env.PACKAGE_PATH }}/**/*.csproj'
 
       - name: Extract local version
         id: get_local
@@ -73,7 +74,8 @@ jobs:
         uses: actions/setup-dotnet@v4  # Updated to v4
         with: 
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true  # Enable NuGet caching
+          cache: true
+          cache-dependency-path: '${{ env.PACKAGE_PATH }}/**/*.csproj'
 
       - name: Restore dependencies
         run: dotnet restore ${{ env.PACKAGE_PATH }}
@@ -106,7 +108,8 @@ jobs:
         uses: actions/setup-dotnet@v4  # Updated to v4
         with: 
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true  # Enable NuGet caching
+          cache: true
+          cache-dependency-path: '${{ env.PACKAGE_PATH }}/**/*.csproj'
 
       - name: Install ApiCompat tool
         run: dotnet tool install --global Microsoft.DotNet.ApiCompat.Tool
