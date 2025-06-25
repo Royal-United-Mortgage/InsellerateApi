@@ -33,6 +33,14 @@ jobs:
         id: get_local
         run: |
           LOCAL=$(grep -oPm1 '(?<=<Version>)[^<]+' ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj)
+          echo "Extracted version: '$LOCAL'"
+          # Validate version format
+          if [[ ! "$LOCAL" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version format detected: '$LOCAL'"
+            echo "Fixing version to 1.0.0"
+            LOCAL="1.0.0"
+            sed -i "s|<Version>.*</Version>|<Version>$LOCAL</Version>|" ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj
+          fi
           echo "local=$LOCAL" >> $GITHUB_OUTPUT
 
       - name: Get latest remote version
@@ -77,10 +85,17 @@ jobs:
         run: dotnet restore ${{ env.PACKAGE_PATH }}
 
       - name: Build
-        run: dotnet build -c ${{ env.CONFIGURATION }} --no-restore ${{ env.PACKAGE_PATH }}
+        run: |
+          echo "Building project..."
+          dotnet build -c ${{ env.CONFIGURATION }} --no-restore ${{ env.PACKAGE_PATH }} --verbosity normal
 
       - name: Pack
-        run: dotnet pack -c ${{ env.CONFIGURATION }} --no-build ${{ env.PACKAGE_PATH }}
+        run: |
+          echo "Packing project..."
+          # Show the current version in the project file before packing
+          echo "Current version in project file:"
+          grep -A1 -B1 "<Version>" ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj || echo "No Version tag found"
+          dotnet pack -c ${{ env.CONFIGURATION }} --no-build ${{ env.PACKAGE_PATH }} --verbosity normal
 
       - name: Publish to GitHub Packages
         run: |
@@ -112,12 +127,21 @@ jobs:
         run: dotnet restore ${{ env.PACKAGE_PATH }}
 
       - name: Build library
-        run: dotnet build -c ${{ env.CONFIGURATION }} --no-restore ${{ env.PACKAGE_PATH }}
+        run: |
+          echo "Building library..."
+          dotnet build -c ${{ env.CONFIGURATION }} --no-restore ${{ env.PACKAGE_PATH }} --verbosity normal
 
       - name: Compare public API vs published
         id: diff
         continue-on-error: true
         run: |
+          echo "Comparing API with version ${{ needs.prepare.outputs.remote_version }}"
+          # Show what files exist
+          echo "Built files:"
+          find ${{ env.PACKAGE_PATH }}/bin/${{ env.CONFIGURATION }} -name "*.dll" || echo "No DLL files found"
+          echo "NuGet cache contents:"
+          find ~/.nuget/packages -name "insellerateapi" -type d || echo "Package not found in cache"
+          
           apicompat \
             --baseline ~/.nuget/packages/insellerateapi/${{ needs.prepare.outputs.remote_version }}/lib/net8.0/InsellerateApi.dll \
             --target   ${{ env.PACKAGE_PATH }}/bin/${{ env.CONFIGURATION }}/net8.0/InsellerateApi.dll
@@ -126,9 +150,21 @@ jobs:
         if: steps.diff.outcome == 'failure'
         run: |
           OLD=${{ needs.prepare.outputs.remote_version }}
+          echo "Old version: '$OLD'"
+          # Validate remote version format
+          if [[ ! "$OLD" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid remote version format: '$OLD', using 1.0.0"
+            OLD="1.0.0"
+          fi
           IFS='.' read -r MAJ MIN PATCH <<< "$OLD"
           NEW="$MAJ.$MIN.$((PATCH+1))"
+          echo "New version: '$NEW'"
           sed -i "s|<Version>.*</Version>|<Version>$NEW</Version>|" ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj
+          
+          # Verify the change was made correctly
+          VERIFY=$(grep -oPm1 '(?<=<Version>)[^<]+' ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj)
+          echo "Verified version in file: '$VERIFY'"
+          
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj
@@ -137,7 +173,12 @@ jobs:
 
       - name: Pack (if version was bumped)
         if: steps.diff.outcome == 'failure'
-        run: dotnet pack -c ${{ env.CONFIGURATION }} --no-build ${{ env.PACKAGE_PATH }}
+        run: |
+          echo "Re-packing with new version..."
+          # Show the current version in the project file before packing
+          echo "Current version in project file:"
+          grep -A1 -B1 "<Version>" ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj || echo "No Version tag found"
+          dotnet pack -c ${{ env.CONFIGURATION }} --no-build ${{ env.PACKAGE_PATH }} --verbosity normal
 
       - name: Publish to GitHub Packages
         run: |
