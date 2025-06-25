@@ -6,7 +6,7 @@
         <Nullable>enable</Nullable>
         <Title>InsellerateApi</Title>
         <Authors>Kyle Miller</Authors>
-        <Version>--help..1</Version>
+        <Version>1.2.0</Version>
     </PropertyGroup>
 
     <ItemGroup>
