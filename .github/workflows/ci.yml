@@ -1,39 +1,147 @@
 name: CI
 on:
   push:
-    branches:
-      - master
+    branches: [ master ]
 
 env:
-  DOTNET_VERSION: '8.0.x' # set this to the dotnet version to use
+  DOTNET_VERSION: '8.0.x'
   PACKAGE_PATH: 'InsellerateApi'
+  CONFIGURATION: Release
+
+permissions:
+  contents: write  # for pushing bump commits
 
 jobs:
-  build:
-    runs-on: windows-latest
-    env:
-      CONFIGURATION: Release
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      publish_direct: ${{ steps.decide.outputs.publish_direct }}
+      compare_api:    ${{ steps.decide.outputs.compare_api }}
+      remote_version: ${{ steps.get_remote.outputs.remote }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v2
-        with:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with: 
           fetch-depth: 0
 
-      - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
-        uses: actions/setup-dotnet@v1
-        with:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with: 
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore NuGet Packages
-        run: dotnet restore ${{ env.PACKAGE_PATH }}
-
-      - name: Build Solution
-        run: dotnet build -c $env:CONFIGURATION ${{ env.PACKAGE_PATH }}
-
-      - name: Package Solution
-        run: dotnet pack -c $env:CONFIGURATION ${{ env.PACKAGE_PATH }}
-
-      - name: Publish to GitHub
+      - name: Extract local version
+        id: get_local
         run: |
-          dotnet nuget add source --username kyle079 --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --name github "https://nuget.pkg.github.com/Royal-United-Mortgage/index.json"
-          dotnet nuget push "${{ env.PACKAGE_PATH }}\bin\${{ env.CONFIGURATION }}\*.nupkg" --source github
+          LOCAL=$(grep -oPm1 '(?<=<Version>)[^<]+' ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj)
+          echo "local=$LOCAL" >> $GITHUB_OUTPUT
+
+      - name: Get latest remote version
+        id: get_remote
+        run: |
+          # List all versions, pick the highest
+          VERSIONS=$(dotnet nuget list package InsellerateApi \
+            --source "https://nuget.pkg.github.com/Royal-United-Mortgage/index.json" \
+            --include-prerelease --verbosity quiet \
+            | awk '{print $2}')
+          REMOTE=$(printf "%s\n" $VERSIONS | sort -V | tail -n1)
+          echo "remote=$REMOTE" >> $GITHUB_OUTPUT
+
+      - name: Decide publish strategy
+        id: decide
+        run: |
+          echo "Local: ${{ steps.get_local.outputs.local }}, Remote: ${{ steps.get_remote.outputs.remote }}"
+          if dpkg --compare-versions ${{ steps.get_local.outputs.local }} gt ${{ steps.get_remote.outputs.remote }}; then
+            echo "publish_direct=true" >> $GITHUB_OUTPUT
+            echo "compare_api=false"  >> $GITHUB_OUTPUT
+          else
+            echo "publish_direct=false" >> $GITHUB_OUTPUT
+            echo "compare_api=true"    >> $GITHUB_OUTPUT
+          fi
+
+  publish-direct:
+    needs: prepare
+    if: needs.prepare.outputs.publish_direct == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout & Setup .NET
+        uses: actions/checkout@v3
+        with: 
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v3
+        with: 
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore, Build & Pack
+        run: |
+          dotnet restore ${{ env.PACKAGE_PATH }}
+          dotnet build   -c ${{ env.CONFIGURATION }} ${{ env.PACKAGE_PATH }}
+          dotnet pack    -c ${{ env.CONFIGURATION }} ${{ env.PACKAGE_PATH }}
+
+      - name: Publish to GitHub Packages
+        run: |
+          dotnet nuget add source \
+            --username kyle079 \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --store-password-in-clear-text \
+            --name github \
+            "https://nuget.pkg.github.com/Royal-United-Mortgage/index.json"
+          dotnet nuget push \
+            "${{ env.PACKAGE_PATH }}\bin\${{ env.CONFIGURATION }}\*.nupkg" \
+            --source github \
+            --skip-duplicate
+
+  check-api-and-publish:
+    needs: prepare
+    if: needs.prepare.outputs.compare_api == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout & Setup .NET
+        uses: actions/checkout@v3
+        with: 
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v3
+        with: 
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install ApiCompat tool
+        run: dotnet tool install --global Microsoft.DotNet.ApiCompat.Tool
+
+      - name: Build library
+        run: dotnet build -c ${{ env.CONFIGURATION }} ${{ env.PACKAGE_PATH }}
+
+      - name: Compare public API vs published
+        id: diff
+        continue-on-error: true
+        run: |
+          apicompat \
+            --baseline ~/.nuget/packages/insellerateapi/${{ needs.prepare.outputs.remote_version }}/lib/netstandard2.0/InsellerateApi.dll \
+            --target   ${{ env.PACKAGE_PATH }}/bin/${{ env.CONFIGURATION }}/net8.0/InsellerateApi.dll
+
+      - name: Bump version if API changed
+        if: steps.diff.outcome == 'failure'
+        run: |
+          OLD=${{ needs.prepare.outputs.remote_version }}
+          IFS='.' read -r MAJ MIN PATCH <<< "$OLD"
+          NEW="$MAJ.$MIN.$((PATCH+1))"
+          sed -i "s|<Version>.*</Version>|<Version>$NEW</Version>|" ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ${{ env.PACKAGE_PATH }}/InsellerateApi.csproj
+          git commit -m "ci: bump NuGet version to $NEW" 
+          git push
+
+      - name: Restore, Build, Pack & Publish
+        run: |
+          dotnet restore ${{ env.PACKAGE_PATH }}
+          dotnet build   -c ${{ env.CONFIGURATION }} ${{ env.PACKAGE_PATH }}
+          dotnet pack    -c ${{ env.CONFIGURATION }} ${{ env.PACKAGE_PATH }}
+          dotnet nuget add source \
+            --username kyle079 \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --store-password-in-clear-text \
+            --name github \
+            "https://nuget.pkg.github.com/Royal-United-Mortgage/index.json"
+          dotnet nuget push \
+            "${{ env.PACKAGE_PATH }}\bin\${{ env.CONFIGURATION }}\*.nupkg" \
+            --source github \
+            --skip-duplicate
