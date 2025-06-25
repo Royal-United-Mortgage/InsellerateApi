@@ -20,16 +20,14 @@ jobs:
       remote_version: ${{ steps.get_remote.outputs.remote }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4  # Updated to v4
+        uses: actions/checkout@v4
         with: 
           fetch-depth: 1
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4  # Updated to v4
+        uses: actions/setup-dotnet@v4
         with: 
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: '${{ env.PACKAGE_PATH }}/**/*.csproj'
 
       - name: Extract local version
         id: get_local
@@ -63,19 +61,17 @@ jobs:
   publish-direct:
     needs: prepare
     if: needs.prepare.outputs.publish_direct == 'true'
-    runs-on: ubuntu-latest  # Switched to ubuntu-latest for speed
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4  # Updated to v4
+        uses: actions/checkout@v4
         with: 
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4  # Updated to v4
+        uses: actions/setup-dotnet@v4
         with: 
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: '${{ env.PACKAGE_PATH }}/**/*.csproj'
 
       - name: Restore dependencies
         run: dotnet restore ${{ env.PACKAGE_PATH }}
@@ -97,19 +93,17 @@ jobs:
   check-api-and-publish:
     needs: prepare
     if: needs.prepare.outputs.compare_api == 'true'
-    runs-on: ubuntu-latest  # Switched to ubuntu-latest for speed
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4  # Updated to v4
+        uses: actions/checkout@v4
         with: 
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4  # Updated to v4
+        uses: actions/setup-dotnet@v4
         with: 
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          cache: true
-          cache-dependency-path: '${{ env.PACKAGE_PATH }}/**/*.csproj'
 
       - name: Install ApiCompat tool
         run: dotnet tool install --global Microsoft.DotNet.ApiCompat.Tool
@@ -120,20 +114,13 @@ jobs:
       - name: Build library
         run: dotnet build -c ${{ env.CONFIGURATION }} --no-restore ${{ env.PACKAGE_PATH }}
 
-      - name: Download baseline package for comparison
-        run: |
-          dotnet add ${{ env.PACKAGE_PATH }} package InsellerateApi \
-            --version ${{ needs.prepare.outputs.remote_version }} \
-            --source "https://nuget.pkg.github.com/Royal-United-Mortgage/index.json" \
-            --package-directory ./baseline
-
       - name: Compare public API vs published
         id: diff
         continue-on-error: true
         run: |
           apicompat \
-            --baseline "./baseline/insellerateapi/${{ needs.prepare.outputs.remote_version }}/lib/net8.0/InsellerateApi.dll" \
-            --target   "${{ env.PACKAGE_PATH }}/bin/${{ env.CONFIGURATION }}/net8.0/InsellerateApi.dll"
+            --baseline ~/.nuget/packages/insellerateapi/${{ needs.prepare.outputs.remote_version }}/lib/net8.0/InsellerateApi.dll \
+            --target   ${{ env.PACKAGE_PATH }}/bin/${{ env.CONFIGURATION }}/net8.0/InsellerateApi.dll
 
       - name: Bump version if API changed
         if: steps.diff.outcome == 'failure'
